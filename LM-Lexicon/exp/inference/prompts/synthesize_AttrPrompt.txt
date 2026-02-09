@@ -1,0 +1,71 @@
+
+STEP 1 Attribute dimension and Attribute value (by GPT-4): 
+(1) in general 
+
+Prompt: “Which attribute dimensions do you consider vital in creating human-readable lexicographic definitions given some input?”
+
+Response:...
+
+Key attributes:
+- Exactness: Ensure the definition accurately reflects the meaning of the term without ambiguity.
+- Conciseness: Keep definitions brief and to the point, without sacrificing essential information.
+- Specificity: Avoid overly broad definitions by providing specific details that distinguish the term from similar ones.
+- Consistency: Use consistent terminology within and across definitions to avoid confusion. Maintain a consistent style and format across all definitions to aid readability and comprehension.
+- Contextual Information:
+    - Usage Notes: Include notes on common usage, connotations, and any regional or dialectal variations.
+    - Part of Speech: Clearly indicate the part of speech (noun, verb, adjective, etc.) to provide grammatical context.
+- Readability: 
+    - Sentence Structure: Use straightforward sentence structures and avoid overly complex syntax.
+    - Typography: Employ clear and readable typography, including proper spacing, fonts, and layout to enhance visual clarity.
+- Cultural and Social Sensitivity:
+    - Neutrality: Ensure definitions are neutral and unbiased, avoiding culturally or socially insensitive language.
+    - Inclusivity: Consider diverse perspectives and avoid definitions that may be exclusionary or offensive to any group.
+- Etymology and Origins (if relevant): Etymology and Origins (if relevant):
+    
+
+
+(2) dataset-specific
+Prompt: "What do you think are important attributes to generate some diverse sentence/definitions for X dataset?" （X = wordnet, oxford, wiki, slang）+ [ADDITIONAL INFORMATION ON DATASET USED!]
+
+Responses:
+(在ChatGPT的回答中选了几个Urban相关,不完全)
+Diverse Demographics, Formality and Informality, Emotional Range.... 
+
+
+Selected attribute dimensions and values (for each dataset):
+-
+-
+-
+
+
+STEP 2 Detailed Prompt Templates
+(在这一步需要先对STEP 1得到的Attribute dimension做筛选；然后对于每个dimension下面的value，让GPT做进一步阐述)
+
+
+(1) synthesize context
+Suppose you are a lexicologist. Please write ?(# number) sentences in X dataset following the requirements below:
+1. Should include the word {target_word} and the part of speech of the {target_word} should be {POS_target_word}
+2. Should be in length between {length:min-words} and {length:max-words} words;
+3. The writing style of the sentence should be {style};
+4. ...
+
+
+
+(2) synthesize definition -> 
+Suppose you are a lexicologist. Please write ? definitions in X dataset following the requirements below:
+1. You are given a reference definition {referent_definition};
+2. Should be in length between {length:min-words} and {length:max-words} words;
+
+
+
+(3) synthesize definition-context pair -> better sample quality
+Suppose you are a lexicologist. Please write ? definitions and the corresponding example sentences in X dataset following the requirements below:
+1. Should include the word {target_word} and the part of speech of the {target_word} should be {POS_target_word}
+2. Should be in length between {length:min-words} and {length:max-words} words;
+3. The output format should always be json;
+4. ...
+
+
+
+
+

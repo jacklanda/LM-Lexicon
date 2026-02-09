@@ -1,0 +1,45 @@
+{
+    "wordnet": {
+        "training": {
+            "max_seq_len": 128,
+            "global_batch_size": 128,
+            "epochs": 20,
+            "learning_rate": 5e-6,
+            "seed": 42,
+            "data_seed": 42,
+            "training_precision": "bf16",
+            "eval_precision": "bf16",
+            "optimizer": {
+                "type": "adamw",
+                "beta1": 0.9,
+                "beta2": 0.95,
+                "epsilon": 1e-8,
+                "weight_decay": 0.01
+            },
+            "lr_scheduler": {
+                "type": "polynomial",
+                "warmup_ratio": 0.06,
+                "lr_end": 2.5e-6
+            },
+            "gradient_accumulation_steps": 1,
+            "gradient_checkpointing": true,
+            "metric_for_best_model": "bleu"
+        },
+        "inference": {
+            "max_length": max_seq_len,
+            "num_beams": 5,
+            "early_stopping": false,
+            "no_repeat_ngram_size": 2,
+            "length_penalty": -1.0,
+            "num_return_sequences": 1,
+            "top_p": 1.0,
+            "temperature": 1.0,
+            "repetition_penalty": 1.0,
+            "bos_token_id": 128000,
+            "pad_token_id": 128001,
+            "eos_token_id": 128001,
+            "decoder_start_token_id": 128000,
+            "use_cache": true
+        }
+    }
+}

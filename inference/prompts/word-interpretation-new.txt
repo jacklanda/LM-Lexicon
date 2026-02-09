@@ -1,0 +1,2 @@
+{{example}}
+[QUESTION] What is the definition of "{{word}}" in the context? [CONTEXT] "{{context}}" [CONCISE DEFINITION]

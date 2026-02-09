@@ -1,0 +1,23 @@
+export PYTORCH_CUDA_ALLOC_CONF := "expandable_segments:True"
+
+python := "/home/liuyang/app/anaconda3/envs/workspace/bin/python"
+model := "/home/liuyang/workspace/dm/training/output/Meta-Llama-3-8B-oxford/checkpoint-3210"
+
+lm-lexicon DATA MODEL:
+	{{ python }} main.py \
+	--task word-interpretation \
+	--model {{MODEL}} \
+	--prompt_path prompts/word-interpretation.txt \
+	--example_path dataset/{{DATA}} \
+	--input_path dataset/{{DATA}}/test.jsonl \
+	--output_format json \
+	--retrieval_policy random \
+	--evaluate \
+	--shot_num 0 \
+	--max_query 128 \
+	--max_tokens 128 \
+	--temperature 0 \
+	--presence_penalty 0 \
+	--frequency_penalty 0 \
+	--verbal \
+	--run_local_model

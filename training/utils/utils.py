@@ -1,0 +1,435 @@
+import os
+import json
+import logging
+from time import time
+from tqdm import tqdm
+from typing import Any, Dict, List, Optional
+from collections import OrderedDict
+
+import wandb
+import torch
+import bitsandbytes as bnb
+from torch import nn
+from torch.optim.lr_scheduler import LambdaLR
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
+from datasets import Dataset
+from transformers.trainer_pt_utils import get_parameter_names
+from transformers import (
+    GenerationConfig,
+    Seq2SeqTrainer,
+    TrainerCallback,
+    ProgressCallback,
+    TrainingArguments,
+    TrainerState,
+    TrainerControl,
+    PreTrainedModel,
+    EarlyStoppingCallback,
+)
+from transformers.utils import logging as hf_logging
+from transformers.integrations import WandbCallback
+
+IGNORE_INDEX = -100
+
+logger = hf_logging.get_logger(__name__)
+
+
+class IntervalEvalCallBack(WandbCallback):
+    def __init__(
+        self,
+        trainer,
+        test_dataset,
+        num_samples=10,
+        max_new_tokens=256,
+        log_model="checkpoint",
+    ):
+        "A CallBack to log samples a wandb.Table during training"
+        super().__init__()
+        self._log_model = log_model
+        self.sample_dataset = test_dataset.select(range(num_samples))
+        self.model, self.tokenizer = trainer.model, trainer.tokenizer
+        self.gen_config = GenerationConfig.from_pretrained(
+            trainer.model.name_or_path, max_new_tokens=max_new_tokens
+        )
+
+    def generate(self, prompt):
+        tokenized_prompt = self.tokenizer(prompt, return_tensors="pt")[
+            "input_ids"
+        ].cuda()
+        with torch.inference_mode():
+            output = self.model.generate(
+                tokenized_prompt, generation_config=self.gen_config
+            )
+        return self.tokenizer.decode(
+            output[0][len(tokenized_prompt[0]) :], skip_special_tokens=True
+        )
+
+    def samples_table(self, examples):
+        "Create a wandb.Table to store the generations"
+        records_table = wandb.Table(
+            columns=["prompt", "generation"] + list(self.gen_config.to_dict().keys())
+        )
+        for example in tqdm(examples, leave=False):
+            prompt = example["text"]
+            generation = self.generate(prompt=prompt)
+            records_table.add_data(
+                prompt, generation, *list(self.gen_config.to_dict().values())
+            )
+        return records_table
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        "Log the wandb.Table after calling trainer.evaluate"
+        super().on_evaluate(args, state, control, **kwargs)
+        records_table = self.samples_table(self.sample_dataset)
+        self._wandb.log({"sample_predictions": records_table})
+
+
+class EarlyStoppingCallback(EarlyStoppingCallback):
+    def __init__(
+        self,
+        early_stopping_patience: int = 16,
+        early_stopping_threshold: Optional[float] = 0.001,
+    ):
+        super().__init__(
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_threshold=early_stopping_threshold,
+        )
+
+
+class TrackGPUUtilizationCallback(ProgressCallback):
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if state.is_world_process_zero:
+            self.training_bar = tqdm(
+                total=state.max_steps,
+                dynamic_ncols=True,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+            )
+        self.current_step = 0
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if state.is_world_process_zero:
+            seqence_length = 128
+            samples_num = args.per_device_train_batch_size * args.world_size
+            tokens_num = seqence_length * samples_num
+            if "last_timestamp" not in state.__dict__:
+                state.last_timestamp = time()
+            else:
+                current_timestamp = time()
+                time_diff = current_timestamp - state.last_timestamp
+                state.last_timestamp = current_timestamp
+
+                samples_per_sec = samples_num // time_diff
+                tokens_per_sec = tokens_num // time_diff
+
+                # nvmlInit()
+                # handle = nvmlDeviceGetHandleByIndex(0)
+                # info = nvmlDeviceGetMemoryInfo(handle)
+                # gpu_memory = info.free // 1024 // 1024
+                self.training_bar.update(1)
+                self.training_bar.set_postfix(
+                    {
+                        "samples/sec": f"{samples_per_sec:,}",
+                        "tokens/sec": f"{tokens_per_sec:,}",
+                        # "gpu_memory": f"{gpu_memory:,} MB",
+                    }
+                )
+                self.current_step = state.global_step
+
+
+class TrackEvalResultCallback(TrainerCallback):
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        metrics: Dict[str, float],
+        **kwargs,
+    ):
+        super().on_evaluate(args, state, control, **kwargs)
+        if "eval_count" not in state.__dict__:
+            state.eval_count = 0
+        # Save the evaluation results if current process is the global main process
+        if state.is_world_process_zero:
+            save_dir, words, inputs, outputs, labels = (
+                state.save_dir,
+                state.words,
+                state.inputs,
+                state.outputs,
+                state.labels,
+            )
+            # remove directory first if exists
+            with open(f"{save_dir}/metrics-{str(state.eval_count)}.json", "w") as f:
+                metrics.update({"total_flos": state.total_flos})
+                f.write(json.dumps(metrics, ensure_ascii=False, indent=4))
+
+            with open(f"{save_dir}/io-{str(state.eval_count)}.jsonl", "w") as f:
+                for word, input_, output, label in zip(words, inputs, outputs, labels):
+                    if "[Definition of Term in Context]" in output:
+                        output_processed = output.split(
+                            "[Definition of Term in Context]"
+                        )[-1].strip()
+                    else:
+                        output_processed = output
+                    f.write(
+                        json.dumps(
+                            {
+                                "word": word,
+                                "input": input_,
+                                "output": output_processed,
+                                "label": label,
+                            },
+                            ensure_ascii=False,
+                            indent=4,
+                        )
+                        + "\n"
+                    )
+
+        state.eval_count += 1
+
+
+class EvaluateFirstStepCallback(TrainerCallback):
+    def on_step_begin(self, args, state, control, **kwargs):
+        logger.info(f"***** Running Evaluation *****")
+        if state.global_step == 0:
+            control.should_evaluate = True
+
+
+def get_adam_8bit_optimizer(model: PreTrainedModel, training_args: TrainingArguments):
+    decay_parameters = get_parameter_names(model, [nn.LayerNorm])
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [
+                p for n, p in model.named_parameters() if n not in decay_parameters
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+
+    optimizer_kwargs = {
+        "betas": (training_args.adam_beta1, training_args.adam_beta2),
+        "eps": training_args.adam_epsilon,
+    }
+    optimizer_kwargs["lr"] = training_args.learning_rate
+    adam_8bit_optim = bnb.optim.Adam8bit(
+        optimizer_grouped_parameters,
+        betas=(training_args.adam_beta1, training_args.adam_beta2),
+        eps=training_args.adam_epsilon,
+        lr=training_args.learning_rate,
+        weight_decay=training_args.weight_decay,
+    )
+
+    return adam_8bit_optim
+
+
+def get_adam_optimizer(model: PreTrainedModel, training_args: TrainingArguments):
+    decay_parameters = get_parameter_names(model, [nn.LayerNorm])
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [
+                p for n, p in model.named_parameters() if n not in decay_parameters
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+
+    optimizer_kwargs = {
+        "betas": (training_args.adam_beta1, training_args.adam_beta2),
+        "eps": training_args.adam_epsilon,
+    }
+    optimizer_kwargs["lr"] = training_args.learning_rate
+    optimizer = torch.optim.Adam(
+        optimizer_grouped_parameters,
+        betas=(training_args.adam_beta1, training_args.adam_beta2),
+        eps=training_args.adam_epsilon,
+        lr=training_args.learning_rate,
+        weight_decay=training_args.weight_decay,
+    )
+
+    return optimizer
+
+
+def get_lr_scheduler(
+    optimizer: Any,
+    training_steps: int,
+    warmup_ratio: float,
+    lr_begin: float = 1e-6,
+    lr_end: float = 5e-7,
+):
+    """
+    Creates a linear learning rate scheduler with warmup for PyTorch optimizer.
+
+    Args:
+        optimizer (Optimizer): PyTorch optimizer object.
+        training_steps (int): Total number of training steps.
+        warmup_ratio (float): Ratio of warmup steps.
+        lr_begin (float, optional): Initial learning rate. Defaults to 1e-6.
+        lr_end (float, optional): Final learning rate. Defaults to 5e-7.
+
+    Returns:
+        LambdaLR: Linear learning rate scheduler.
+    """
+
+    def lr_lambda(current_step):
+        if current_step < warmup_ratio * training_steps:
+            return (lr_end - lr_begin) / (
+                warmup_ratio * training_steps
+            ) * current_step + lr_begin
+        else:
+            return lr_end + (lr_begin - lr_end) * (
+                current_step - warmup_ratio * training_steps
+            ) / ((1 - warmup_ratio) * training_steps)
+
+    return LambdaLR(optimizer, lr_lambda)
+
+
+def dump_hf_dataset(data: Dataset, save_path: str, save_format: str = "jsonl") -> None:
+    """
+    Dumps a Hugging Face dataset to a JSONL file.
+
+    Args:
+        data (Dataset): Hugging Face dataset object.
+        save_path (str): Path to save the JSONL file.
+    """
+    # drop ["input_ids", "attention_mask", "labels"]
+    data = data.remove_columns(["input_ids", "attention_mask", "labels"])
+    if save_format == "jsonl":
+        with open(save_path, "w") as f:
+            for example in data:
+                f.write(json.dumps(example, ensure_ascii=False) + "\n")
+    else:
+        raise NotImplementedError(f"Unsupported save format: {save_format}")
+
+
+def aggregate_definitions(dataset: Dataset) -> OrderedDict[str, List[str]]:
+    """
+    Aggregates multiple definitions into a single word entry.
+
+    Args:
+        dataset (Dataset): Hugging Face dataset object.
+
+    Returns:
+        Dict[str, List[str]]: Dictionary of word definitions.
+    """
+    word2defs = OrderedDict()
+    for example in dataset:
+        word = example["term"]
+        definition = example["definition"]
+        if word not in word2defs:
+            word2defs[word] = []
+        word2defs[word].append(definition)
+
+    return word2defs
+
+
+def create_sft_trainer(
+    model,
+    optimizer,
+    tokenizer,
+    args,
+    train_dataset,
+    eval_dataset,
+    preprocess_logits_for_metrics,
+    compute_metrics,
+    callbacks,
+    data_collator,
+    device_map,
+) -> Seq2SeqTrainer:
+    """
+    Create a trainer for SFT model.
+
+    Args:
+    - model: model
+    - optimizer: optimizer
+    - tokenizer: tokenizer
+    - args: training arguments
+    - train_dataset: training dataset
+    - eval_dataset: evaluation dataset
+    - preprocess_logits_for_metrics: function to preprocess logits for metrics
+    - compute_metrics: function to compute metrics
+    - callbacks: callbacks
+    - data_collator: data collator
+    - device_map: device map
+
+    Returns:
+    - trainer: trainer
+    """
+    trainer = Seq2SeqTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=args,
+        # optimizers=(optimizer, None),
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=data_collator,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+        compute_metrics=compute_metrics,
+        callbacks=callbacks,
+    )
+    return trainer
+
+
+def timeit(func):
+    def wrapper(*args, **kwargs):
+        start = time()
+        result = func(*args, **kwargs)
+        end = time()
+        print(f"{func.__name__} took {end - start:.2f} seconds")
+        return result
+
+    return wrapper
+
+
+def get_logger(logger_name: str, output_dir: str) -> logging.Logger:
+    """Initialize logger.
+
+    Args:
+    - logger_name(str): logger name
+    - output_dir(str): output directory
+
+    Returns:
+    - logger(logging.Logger): logger
+    """
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
+    os.makedirs(output_dir, exist_ok=True)
+    file_handler = logging.FileHandler(os.path.join(output_dir, "log.txt"), mode="w")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    logger.addHandler(file_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    logger.addHandler(console_handler)
+
+    return logger
