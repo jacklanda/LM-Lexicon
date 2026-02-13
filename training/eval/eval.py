@@ -1192,7 +1192,7 @@ def get_word2refs(
         Dict[str, List[str]]: dictionary of words to references
     """
     # load and return the cache if it exists
-    if cache_path is not None and os.path.exists(cache_path):
+    if cache_path is not None or os.path.exists(cache_path):
         with open(cache_path, "r") as f:
             word2refs = json.load(f)
             print(
@@ -1288,76 +1288,6 @@ def get_chunks(
         raise ValueError("Invalid input. Provide either `words` or `refs` and `preds`.")
 
 
-def compute_sentence_bleu_nltk(
-    word: str,
-    pred: str,
-    ref: str,
-    word2refs: Dict[str, List[str]],
-    one_to_one: bool = False,
-) -> float:
-    # prepare tokens list for predicted definition
-    pred_tokens = pred.split()
-    # prepare tokens list for reference definitions
-    ref_tokens_list = (
-        [ref.split()] if one_to_one else [ref.split() for ref in word2refs[word]]
-    )
-    try:
-        # use one pred to many refs like Huang et al. (2021)
-        bleu = bleu_score.sentence_bleu(
-            ref_tokens_list,  # [[tok1, tok2, ...]] / [[tok1, tok2, ...], ...]
-            pred_tokens,  # [tok1, tok2, ...]
-            smoothing_function=bleu_score.SmoothingFunction().method2,
-            auto_reweigh=False if len(pred_tokens) == 0 else True,
-        )
-    except Exception as _:
-        bleu = 0.0
-
-    return bleu
-
-
-def compute_sentence_bleu_cpp(
-    word: str,
-    pred: str,
-    ref: str,
-    word2ref_paths: List[str],
-    word2refs: Dict[str, List[str]],
-) -> float:
-    with open(os.devnull, "w") as devnull:
-        failed_times = 0
-        word_ref_paths = word2ref_paths[word]
-        while failed_times < 10:
-            rp = Popen(["echo", pred], stdout=PIPE)
-            bp = Popen(
-                ["artifact/sentence-bleu"] + word_ref_paths,
-                stdin=rp.stdout,
-                stdout=PIPE,
-                stderr=devnull,
-            )
-            rp.stdout.close()
-            out, err = bp.communicate()
-            bp.wait()
-            bp.stdout.close()
-            out = str(out, encoding="utf-8").strip()
-            if out == "":
-                console.log(f"[red]Error: Empty output for {word}: {pred}![/red]")
-                out = "-1.0"
-                failed_times += 1
-            else:
-                break
-        bleu = (
-            float(out)
-            # if is_float(out)
-            # else compute_sentence_bleu(
-            # [pred],
-            # [ref],
-            # mode="nltk",
-            # words=[word],
-            # word2refs=word2refs,
-            # n_workers=1,
-            # )  # use sentence-bleu-nltk as backup eval scheme
-        )
-
-    return bleu
 
 
 def is_float(s: str) -> bool:

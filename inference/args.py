@@ -78,14 +78,14 @@ def parse_arguments(desc: str = "Query Large Language Models"):
     parser.add_argument(
         "--output_format",
         type=str,
-        required=True,
+        required=False,
         default="json",
         help="Output format should be specified with json or csv",
     )
     parser.add_argument(
         "--retrieval_policy",
         type=str,
-        required=True,
+        required=False,
         default="random",
         help="The policy used to get in-context examples",
     )
