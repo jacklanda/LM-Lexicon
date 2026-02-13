@@ -88,7 +88,7 @@ os.environ["WANDB_SILENT"] = "false"
 os.environ["WANDB_DISABLED"] = "false"
 os.environ["WANDB_ENTITY"] = "definition-modeling"
 os.environ["WANDB_PROJECT"] = "dm"
-os.environ["WANDB_CACHE_DIR"] = "/home/liuyang/.cache/wandb"
+os.environ["WANDB_CACHE_DIR"] = os.path.expanduser("~/.cache/wandb")
 os.environ["WANDB_API_KEY"] = "6dee9586d0042e7fc6a76b0be341b9ba2650d3b1"
 
 
@@ -992,13 +992,15 @@ def train(args: argparse.Namespace) -> None:
     elif train_mode == "seq2seq":
         raise NotImplementedError("Seq2Seq training is not supported yet.")
     elif train_mode == "hpo":
+        # Placeholder for hyperparameter space - HPO mode requires implementation
+        create_wandb_hp_space = lambda: {}
         # perform hyperparameter search on the single rank
         best_trial = trainer.hyperparameter_search(
             direction="maximize",
             backend="wandb",
             hp_space=create_wandb_hp_space,
             n_trials=30,
-            compute_objective=lambda metrics: metrics["eval_sentence_bleu_cpp"],
+            compute_objective=lambda trial: trial["eval_sentence_bleu_cpp"],
         )
     else:
         raise ValueError(f"Invalid training mode: {train_mode}")

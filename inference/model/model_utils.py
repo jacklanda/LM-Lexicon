@@ -29,7 +29,7 @@ HTTPX_CLIENT = Client(
     proxies={"https://": "http://127.0.0.1:7890", "http://": "http://127.0.0.1:7890"}
 )
 
-spacial_tokens_tensor = torch.tensor([128000, 128001, 128009]).to("cuda")
+spacial_tokens_tensor = torch.tensor([128000, 128001, 128009]).to("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @torch.no_grad()
