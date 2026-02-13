@@ -116,7 +116,6 @@ def get_lexical_data(
 
     console.log(f"Total number of examples: {len(examples)}")
     random.shuffle(examples)
-    # exit()
 
     words = [example["word"] for example in examples]
     refs = [example["definition"] for example in examples]
