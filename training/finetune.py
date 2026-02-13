@@ -89,7 +89,7 @@ os.environ["WANDB_DISABLED"] = "false"
 os.environ["WANDB_ENTITY"] = "definition-modeling"
 os.environ["WANDB_PROJECT"] = "dm"
 os.environ["WANDB_CACHE_DIR"] = os.path.expanduser("~/.cache/wandb")
-os.environ["WANDB_API_KEY"] = "6dee9586d0042e7fc6a76b0be341b9ba2650d3b1"
+os.environ["WANDB_API_KEY"] = "YOUR WANDB API KEY"
 
 
 # set up logging
