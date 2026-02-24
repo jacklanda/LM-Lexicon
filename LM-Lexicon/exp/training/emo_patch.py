@@ -1,0 +1,368 @@
+from typing import List, Optional, Tuple
+
+import torch
+from torch import nn
+
+import transformers
+from transformers.models.llama.modeling_llama import CausalLMOutputWithPast
+from mergoo.models.modeling_llama import LlamaForCausalLM as MoELlamaForCausalLM
+
+
+def emo1_adaptive(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+    cache_position: Optional[int] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = (
+        output_attentions
+        if output_attentions is not None
+        else self.config.output_attentions
+    )
+    output_hidden_states = (
+        output_hidden_states
+        if output_hidden_states is not None
+        else self.config.output_hidden_states
+    )
+    return_dict = (
+        return_dict if return_dict is not None else self.config.use_return_dict
+    )
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+
+    loss = None
+    if labels is not None:
+        mask = labels[:, 1:].contiguous().view(-1)
+        mask = (mask != -100).to(logits.dtype)
+        loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+        labels = labels[:, 1:].contiguous().view(-1)
+        # move labels to the same device of logits
+        labels = labels.to(logits.device)
+        mle_loss = loss_fct(logits, labels)
+
+        # ======================================================================== #
+        #                   Compute the EMO loss
+        # ======================================================================== #
+        labels_tmp = labels.clone()
+        labels = labels.cpu()  # move labels to cpu to release the memory
+        labels_tmp[labels_tmp == (-100)] = 0
+        one_hot = torch.nn.functional.one_hot(
+            labels_tmp, num_classes=self.config.vocab_size
+        ).to(logits.dtype)
+        labels_tmp = labels_tmp.cpu()
+        stable_onehot = (one_hot + 1e-15) / torch.linalg.vector_norm(
+            (one_hot + 1e-15), ord=1, dim=-1, keepdim=True
+        )  # (bsz*seq_len, vocab_size)
+        embedding_matrix = (
+            self.lm_head.weight.data.detach()
+        )  # (vocab_size, hidden_size)
+        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(
+            embedding_matrix, ord=2, dim=1, keepdim=True
+        )
+        p_contextual_repr = (
+            stable_onehot @ embedding_matrix
+        )  # (bsz*seq_len, hidden_size)
+        stable_onehot = stable_onehot.cpu()
+        q_grad = torch.log_softmax(logits, dim=-1).exp()  # (bsz*seq_len, vocab_size)
+        gt_q = (q_grad * one_hot).detach()
+        one_hot = one_hot.cpu()
+        q_final = q_grad - gt_q
+        q_contextual_repr = q_final @ embedding_matrix  # (bsz*seq_len, hidden_size)
+        emo_loss = 1 - torch.sum(
+            p_contextual_repr * q_contextual_repr, dim=-1
+        )  # (bsz*seq_len,)
+        # move emo_loss to the same device of mask
+        emo_loss = emo_loss.to(mask.device)
+        emo_loss = emo_loss * mask
+
+        # ======================================================================== #
+        #                   Compose the final loss
+        # ======================================================================== #
+        # move emo_loss to the same device of mle_loss
+        emo_loss = emo_loss.to(mle_loss.device)
+        loss = ((mle_loss / (emo_loss + 1e-10)).detach() * emo_loss + mle_loss) * 0.5
+        # move loss to the same device of mask
+        loss = loss.to(mask.device)
+        loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    return CausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+    )
+
+
+def emo2_adaptive(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = (
+        output_attentions
+        if output_attentions is not None
+        else self.config.output_attentions
+    )
+    output_hidden_states = (
+        output_hidden_states
+        if output_hidden_states is not None
+        else self.config.output_hidden_states
+    )
+    return_dict = (
+        return_dict if return_dict is not None else self.config.use_return_dict
+    )
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    mask = labels[:, 1:].contiguous().view(-1)
+    mask = (mask != -100).to(logits.dtype)
+    loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+    logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+    labels = labels[:, 1:].contiguous().view(-1)
+    mle_loss = loss_fct(logits, labels)
+
+    # ======================================================================== #
+    #                   Compute the EMO loss
+    # ======================================================================== #
+    labels_tmp = labels.clone()
+    labels_tmp[labels_tmp == (-100)] = 0
+    one_hot = torch.nn.functional.one_hot(
+        labels_tmp, num_classes=self.config.vocab_size
+    ).to(logits.dtype)
+    stable_onehot = (one_hot + 1e-15) / torch.linalg.vector_norm(
+        (one_hot + 1e-15), ord=1, dim=-1, keepdim=True
+    )  # (bsz*seq_len, vocab_size)
+    embedding_matrix = self.lm_head.weight.data.detach()  # (vocab_size, hidden_size)
+    embedding_matrix = embedding_matrix / torch.linalg.vector_norm(
+        embedding_matrix, ord=2, dim=1, keepdim=True
+    )
+    p_contextual_repr = stable_onehot @ embedding_matrix  # (bsz*seq_len, hidden_size)
+    q_grad = torch.log_softmax(logits, dim=-1).exp()  # (bsz*seq_len, vocab_size)
+    gt_q = (q_grad * one_hot).detach()
+    q_final = q_grad - gt_q
+    q_contextual_repr = q_final @ embedding_matrix  # (bsz*seq_len, hidden_size)
+    emo_loss = 1 - torch.sum(
+        p_contextual_repr * q_contextual_repr, dim=-1
+    )  # (bsz*seq_len,)
+    emo_loss = emo_loss * mask
+
+    # ======================================================================== #
+    #                   Compose the final loss
+    # ======================================================================== #
+    loss = (emo_loss / (mle_loss + 1e-10)).detach() * mle_loss + emo_loss
+    loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    return CausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+    )
+
+
+def emo2_fixed(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = (
+        output_attentions
+        if output_attentions is not None
+        else self.config.output_attentions
+    )
+    output_hidden_states = (
+        output_hidden_states
+        if output_hidden_states is not None
+        else self.config.output_hidden_states
+    )
+    return_dict = (
+        return_dict if return_dict is not None else self.config.use_return_dict
+    )
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    mask = labels[:, 1:].contiguous().view(-1)
+    mask = (mask != -100).to(logits.dtype)
+    loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+    logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+    labels = labels[:, 1:].contiguous().view(-1)
+    mle_loss = loss_fct(logits, labels)
+
+    # ======================================================================== #
+    #                   Compute the EMO loss
+    # ======================================================================== #
+    labels_tmp = labels.clone()
+    labels_tmp[labels_tmp == (-100)] = 0
+    one_hot = torch.nn.functional.one_hot(
+        labels_tmp, num_classes=self.config.vocab_size
+    ).to(logits.dtype)
+    stable_onehot = (one_hot + 1e-15) / torch.linalg.vector_norm(
+        (one_hot + 1e-15), ord=1, dim=-1, keepdim=True
+    )  # (bsz*seq_len, vocab_size)
+    embedding_matrix = self.cost_embedding  # (vocab_size, hidden_size)
+    embedding_matrix = embedding_matrix / torch.linalg.vector_norm(
+        embedding_matrix, ord=2, dim=1, keepdim=True
+    )
+    p_contextual_repr = stable_onehot @ embedding_matrix  # (bsz*seq_len, hidden_size)
+    q_grad = torch.log_softmax(logits, dim=-1).exp()  # (bsz*seq_len, vocab_size)
+    gt_q = (q_grad * one_hot).detach()
+    q_final = q_grad - gt_q
+    q_contextual_repr = q_final @ embedding_matrix  # (bsz*seq_len, hidden_size)
+    emo_loss = 1 - torch.sum(
+        p_contextual_repr * q_contextual_repr, dim=-1
+    )  # (bsz*seq_len,)
+
+    # ======================================================================== #
+    #                   Compose the final loss
+    # ======================================================================== #
+    loss = (emo_loss / (mle_loss + 1e-10)).detach() * mle_loss + emo_loss
+    loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    return CausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+    )
+
+
+def replace_llama_forward_with_emo_1_adaptive_forward(
+    logger, model_type: str = "dense"
+):
+    if model_type == "dense":
+        transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = (
+            emo1_adaptive
+        )
+    elif model_type == "sparse":
+        MoELlamaForCausalLM.forward = emo1_adaptive
+    else:
+        raise ValueError(
+            "Invalid model type when replacing forward method with EMOLoss."
+        )
+    logger.info("Replaced forward method with EMOLoss.")
+
+
+def replace_llama_forward_with_emo_2_adaptive_forward(
+    logger, model_type: str = "dense"
+):
+    if model_type == "dense":
+        transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = (
+            emo2_adaptive
+        )
+    elif model_type == "sparse":
+        MoELlamaForCausalLM.forward = emo2_adaptive
+    else:
+        raise ValueError(
+            "Invalid model type when replacing forward method with EMOLoss."
+        )
+    logger.info("Replaced forward method with EMOLoss.")
+
+
+def replace_llama_forward_with_emo_2_fixed_forward(logger, model_type: str = "dense"):
+    if model_type == "dense":
+        transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = emo2_fixed
+    elif model_type == "sparse":
+        MoELlamaForCausalLM.forward = emo2_fixed
+    else:
+        raise ValueError(
+            "Invalid model type when replacing forward method with EMOLoss."
+        )
+    logger.info("Replaced forward method with EMOLoss.")

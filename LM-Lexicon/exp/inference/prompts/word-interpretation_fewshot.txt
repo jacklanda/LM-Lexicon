@@ -1,0 +1,18 @@
+Assume that you are a linguistic who research in the lexical definition, now you are taking an exam.
+
+In this exam, you will be given a word and a context containing the word.
+
+Your task is to give the exact definition of the word in the context.
+
+Here are some examples.
+Examples: {{example}}
+
+Here are some rules
+rule1: From now on, don't say anything except the definition.
+rule2: There should not be anything just like "I understand." "I can help" "Thank you." "Pleasure to the exam" " Thank you for the exam!" et al.
+rule3: Definition should made in the context.
+rule4: if you don't obey the rule above, you will be punished.
+
+Word: {{word}}
+Context: {{context}}
+Word Definition: 

@@ -1,0 +1,11 @@
+Assume that you are a professional data annotator.
+
+Please write ten long sentences separated by ###, each of them should include the given word.
+
+Note that the part of speech and semantics of the word in your generated sentences should be the same as the given reference text.
+
+Word: {{word}}
+
+Reference text: {{context}}
+
+generated sentences:

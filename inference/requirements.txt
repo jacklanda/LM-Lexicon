@@ -1,0 +1,31 @@
+# Core dependencies
+torch>=2.0.0
+transformers>=4.35.0
+tiktoken>=0.5.1
+numpy>=1.24.0
+
+# Model clients
+openai>=0.28.0
+anthropic>=0.18.0
+google-generativeai>=0.3.0
+httpx>=0.25.0
+
+# Utilities
+rich>=13.0.0
+
+# Evaluation metrics (optional - install as needed)
+evaluate>=0.4.1
+sacrebleu>=2.0.0
+bert-score>=0.4.0
+mauve-text>=0.3.0
+nltk>=3.8.0
+
+# Data processing
+datasets>=2.16.0
+tqdm>=4.66.0
+
+# Scikit-learn (for some evaluation metrics)
+scikit-learn>=1.3.0
+
+# Other
+sentence-transformers>=2.2.0
