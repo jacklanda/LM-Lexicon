@@ -1,2 +1,0 @@
-{{example}}
-"{{context}}" What is the definition of "{{word}}"?

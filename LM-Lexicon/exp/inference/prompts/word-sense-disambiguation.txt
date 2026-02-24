@@ -1,3 +1,0 @@
-{{example}}
-Please choose the right option from A, B, C, and D.
-{{context}}
