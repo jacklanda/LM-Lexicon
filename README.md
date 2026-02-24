@@ -10,12 +10,6 @@
   <a href="#citation">Citation</a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/pytorch-2.0+-orange.svg" alt="PyTorch">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-</p>
-
 ## Overview
 
 **LM-Lexicon** is a research framework for **Definition Modeling** — generating contextual word definitions using Large Language Models (LLMs). This project provides tools for both inference and training, supporting multiple LLM backends and comprehensive evaluation metrics.
@@ -309,19 +303,6 @@ class MoeLayer(nn.Module):
 | **Gradient Checkpointing** | Reduced memory footprint |
 | **BF16/TF32** | Mixed precision training |
 
-## Citation
-
-If you find this work useful, please cite:
-
-```bibtex
-@article{lm-lexicon2024,
-  title={LM-Lexicon: Improving Definition Modeling via Harmonizing Semantic Experts},
-  author={Your Name},
-  journal={arXiv preprint},
-  year={2024}
-}
-```
-
 ## References
 
 Our evaluation methodology builds upon these works:
@@ -332,19 +313,27 @@ Our evaluation methodology builds upon these works:
 4. Zhang et al. (2022) - Fine-grained Contrastive Learning for Definition Generation
 5. Giulianelli et al. (2023) - Interpretable Word Sense Representations via Definition Generation
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## Acknowledgments
 
-- [HuggingFace Transformers](https://github.com/huggingface/transformers)
+- [Hugging Face Transformers](https://github.com/huggingface/transformers)
 - [DeepSpeed](https://github.com/microsoft/DeepSpeed)
 - [vLLM](https://github.com/vllm-project/vllm)
 - [MoverScore](https://github.com/AIPHES/emnlp19-moverscore)
 
----
+## License
 
-<p align="center">
-  <i>For questions and issues, please open a GitHub issue or contact the authors.</i>
-</p>
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@article{liu2026lm,
+  title={LM-Lexicon: Improving Definition Modeling via Harmonizing Semantic Experts},
+  author={Liu, Yang and Yang, Jiaye and Li, Weikang and Liang, Jiahui and Li, Yang and Yan, Lingyong},
+  journal={arXiv preprint arXiv:2602.14060},
+  year={2026}
+}
+```
+
