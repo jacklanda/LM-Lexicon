@@ -134,11 +134,27 @@ LMLexicon/
 ## Citation
 
 ```bibtex
-@article{liu2026lm,
-  title={LM-Lexicon: Improving Definition Modeling via Harmonizing Semantic Experts},
-  author={Liu, Yang and Yang, Jiaye and Li, Weikang and Liang, Jiahui and Li, Yang and Yan, Lingyong},
-  journal={arXiv preprint arXiv:2602.14060},
-  year={2026}
+@inproceedings{liu2026lmlexicon,
+    title = "{LM}-Lexicon: Improving Definition Modeling via Harmonizing Semantic Experts",
+    author = "Liu, Yang  and
+      Yang, Jiaye  and
+      Li, Weikang  and
+      Liang, Jiahui  and
+      Li, Yang  and
+      Yan, Lingyong",
+    editor = "Demberg, Vera  and
+      Inui, Kentaro  and
+      Marquez, Llu{\'i}s",
+    booktitle = "Proceedings of the 19th Conference of the {E}uropean Chapter of the {A}ssociation for {C}omputational {L}inguistics (Volume 1: Long Papers)",
+    month = mar,
+    year = "2026",
+    address = "Rabat, Morocco",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2026.eacl-long.1/",
+    doi = "10.18653/v1/2026.eacl-long.1",
+    pages = "1--22",
+    ISBN = "979-8-89176-380-7",
+    abstract = "We introduce LM-Lexicon, an innovative definition modeling approach that incorporates data clustering, semantic expert learning, and model merging using a sparse mixture-of-experts architecture. By decomposing the definition modeling task into specialized semantic domains, where small language models are trained as domain experts, LM-Lexicon achieves substantial improvements (+7{\%} BLEU score compared with the prior state-of-the-art model) over existing methods on five widely used benchmarks. Empirically, we demonstrate that 1) the clustering strategy enables fine-grained expert specialization with nearly 10{\%} improvement in definition quality; 2) the semantic-aware domain-level routing mechanism achieves higher expert efficacy (+1{\%}) than conventional token-level routing; and 3) further performance gains can be obtained through test-time compute and semantic expert scaling. Our work advances definition modeling while providing insights into the development of efficient language models for semantic-intensive applications."
 }
 ```
 
