@@ -1,6 +1,7 @@
 # LM-Lexicon: Improving Definition Modeling via Harmonizing Semantic Experts
 
 <p align="center">
+  <a href="https://github.com/jacklanda/LM-Lexicon/blob/main/slides.pdf">Slides</a> •
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#training">Training</a> •
