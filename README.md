@@ -2,6 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/jacklanda/LM-Lexicon/blob/main/slides.pdf">Slides</a> •
+  <a href="https://github.com/jacklanda/LM-Lexicon/blob/main/poster.pdf">Poster</a> •
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#training">Training</a> •
